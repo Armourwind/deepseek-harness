@@ -35,6 +35,12 @@ describe('validateEscalationArgs', () => {
     expect(() => { validateEscalationArgs('workspace-write', 'because the workspace needs it') }).not.toThrow()
   })
 
+  it('accepts a same-mode target without a justification', () => {
+    expect(() => { validateEscalationArgs('danger-full-access', undefined, 'danger-full-access') }).not.toThrow()
+    // A blank justification is equally fine: the request does not widen.
+    expect(() => { validateEscalationArgs('danger-full-access', '   ', 'danger-full-access') }).not.toThrow()
+  })
+
   it('rejects one field without the other, and a blank justification', () => {
     expect(() => { validateEscalationArgs('workspace-write', undefined) }).toThrow(/requires a justification/)
     expect(() => { validateEscalationArgs(undefined, 'orphan reason') }).toThrow(/only valid together with sandbox_permissions/)

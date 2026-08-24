@@ -609,15 +609,17 @@ describe('sandbox escalation through the generic task producer', () => {
     }
   })
 
-  it('rejects injected escalation without a sandbox and non-widening escalation without prompting', async () => {
+  it('rejects injected escalation without a sandbox, runs a same-mode request directly, and fails closed on non-widening', async () => {
     const plain = await setup()
     expect(text(await call(plain, 'bash', escalate))).toContain('not available in this composition')
 
     const { ctx } = await setupSandboxed(true)
     const prompted = vi.fn()
     ctx.on('approval/request', () => { prompted(); return Promise.resolve<ApprovalOutcome>('allowed-once') })
-    const result = await call(ctx, 'bash', { ...escalate, sandbox_permissions: 'workspace-write' }, sandboxAgent('workspace-write'))
-    expect(text(result)).toContain('not strictly wider')
+    // A request for the already-effective mode widens nothing: it runs under
+    // the standing policy without asking.
+    const sameMode = await call(ctx, 'bash', { ...escalate, sandbox_permissions: 'workspace-write' }, sandboxAgent('workspace-write'))
+    expect(sameMode.isError).toBe(false)
     expect(prompted).not.toHaveBeenCalled()
 
     const malformed = sandboxAgent()
@@ -699,6 +701,21 @@ describe('sandbox escalation through the generic task producer', () => {
     ctx.on('approval/request', () => Promise.resolve<ApprovalOutcome>('allowed-once'))
     await call(ctx, 'bash', { ...escalate, sandbox_permissions: 'danger-full-access' }, agent)
     expect(bash.modes).toEqual(['workspace-write', 'danger-full-access'])
+  })
+
+  it('executes a request for the already-effective mode directly without a justification or approval', async () => {
+    const { ctx, bash } = await setupSandboxed(true)
+    const prompted = vi.fn()
+    ctx.on('approval/request', () => { prompted(); return Promise.resolve<ApprovalOutcome>('allowed-once') })
+    const agent = sandboxAgent('danger-full-access')
+    const result = await call(ctx, 'bash', {
+      command: 'true',
+      description: 'same-mode request',
+      sandbox_permissions: 'danger-full-access',
+    }, agent)
+    expect(result.isError).toBe(false)
+    expect(bash.modes).toEqual(['danger-full-access'])
+    expect(prompted).not.toHaveBeenCalled()
   })
 
   it('omits sandbox facts the executor did not acquire from the canonical result', async () => {

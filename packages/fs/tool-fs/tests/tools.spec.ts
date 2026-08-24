@@ -899,6 +899,18 @@ describe('sandbox escalation API (write/edit)', () => {
     expect(fs.stamped).toEqual([])
   })
 
+  it('executes a request for the already-effective mode without a justification or approval', async () => {
+    const { ctx, fs } = await setupConfining({ approval: true })
+    const prompted = vi.fn()
+    ctx.on('approval/request', () => { prompted(); return Promise.resolve('allowed-once' as const) })
+    // The session override raises the standing mode to danger-full-access; a
+    // request for that same mode widens nothing and must not ask.
+    const agent = escalationAgent([{ type: 'sandbox/mode', data: { mode: 'danger-full-access' } }])
+    await call(ctx, 'write', { file_path: 'a.txt', content: 'x', sandbox_permissions: 'danger-full-access' }, agent)
+    expect(fs.stamped).toEqual([{ mode: 'danger-full-access', workspaceRoot: resolve('/session-project') }])
+    expect(prompted).not.toHaveBeenCalled()
+  })
+
   it('escalation without an approval service fails closed', async () => {
     const { ctx } = await setupConfining()
     const result = await call(ctx, 'write', { file_path: 'a.txt', content: 'x', sandbox_permissions: 'danger-full-access', justification: 'why' }, escalationAgent())
@@ -915,7 +927,10 @@ describe('sandbox escalation API (write/edit)', () => {
 
   it('rejects the escalation argument pairing (one field without the other)', async () => {
     const { ctx } = await setupConfining()
-    const missing = await call(ctx, 'write', { file_path: 'a.txt', content: 'x', sandbox_permissions: 'workspace-write' }, escalationAgent())
+    // danger-full-access is strictly wider than the standing workspace-write,
+    // so the pairing rule still applies (a same-mode request needs no
+    // justification and passes without one).
+    const missing = await call(ctx, 'write', { file_path: 'a.txt', content: 'x', sandbox_permissions: 'danger-full-access' }, escalationAgent())
     expect(missing.isError).toBe(true)
     expect(text(missing)).toContain('sandbox_permissions requires a justification')
   })
